@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 
 # Adapted from https://github.com/gpeyre/SinkhornAutoDiff
+
+
 class SinkhornDistance(nn.Module):
     r"""
     Given two empirical measures each with :math:`P_1` locations
@@ -20,13 +22,14 @@ class SinkhornDistance(nn.Module):
         - Input: :math:`(N, P_1, D_1)`, :math:`(N, P_2, D_2)`
         - Output: :math:`(N)` or :math:`()`, depending on `reduction`
     """
+
     def __init__(self, eps, max_iter, reduction='none'):
         super(SinkhornDistance, self).__init__()
         self.eps = eps
         self.max_iter = max_iter
         self.reduction = reduction
 
-    def forward(self, x, y):
+    def forward(self, x, y, mu=None, nu=None):
         # The Sinkhorn algorithm takes as input three variables :
         C = self._cost_matrix(x, y)  # Wasserstein cost function
         x_points = x.shape[-2]
@@ -37,11 +40,12 @@ class SinkhornDistance(nn.Module):
             batch_size = x.shape[0]
 
         # both marginals are fixed with equal weights
-        mu = torch.empty(batch_size, x_points, dtype=torch.float,
-                         requires_grad=False).fill_(1.0 / x_points).squeeze()
-        nu = torch.empty(batch_size, y_points, dtype=torch.float,
-                         requires_grad=False).fill_(1.0 / y_points).squeeze()
-
+        if mu is None:
+            mu = torch.empty(batch_size, x_points, dtype=torch.float,
+                             requires_grad=False).fill_(1.0 / x_points).squeeze()
+        if nu is None:
+            nu = torch.empty(batch_size, y_points, dtype=torch.float,
+                             requires_grad=False).fill_(1.0 / y_points).squeeze()
         u = torch.zeros_like(mu)
         v = torch.zeros_like(nu)
         # To check if algorithm terminates because of threshold
@@ -53,8 +57,9 @@ class SinkhornDistance(nn.Module):
         # Sinkhorn iterations
         for i in range(self.max_iter):
             u1 = u  # useful to check the update
-            u = self.eps * (torch.log(mu+1e-8) - torch.logsumexp(self.M(C, u, v), dim=-1)) + u
-            v = self.eps * (torch.log(nu+1e-8) - torch.logsumexp(self.M(C, u, v).transpose(-2, -1), dim=-1)) + v
+            u = self.eps * (torch.log(mu + 1e-8) - torch.logsumexp(self.M(C, u, v), dim=-1)) + u
+            v = self.eps * (torch.log(nu + 1e-8)
+                            - torch.logsumexp(self.M(C, u, v).transpose(-2, -1), dim=-1)) + v
             err = (u - u1).abs().sum(-1).mean()
 
             actual_nits += 1
